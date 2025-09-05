@@ -1,103 +1,250 @@
+"use client";
+import React, { useState, useRef } from "react";
+import { useEffect } from "react";
+import { featchWeather, featchWeatherByCoords } from "./api/fetchWeather";
 import Image from "next/image";
 
-export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+const App = () => {
+  const [query, setQuery] = useState("");
+  const [weather, setWeather] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [validationError, setValidationError] = useState(null);
+  const errorTimer = useRef(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+  // Shared search logic used by Enter key and button
+  const clearErrorTimer = () => {
+    if (errorTimer.current) {
+      clearTimeout(errorTimer.current);
+      errorTimer.current = null;
+    }
+  };
+
+  const scheduleClearErrors = () => {
+    clearErrorTimer();
+    errorTimer.current = setTimeout(() => {
+      setError(null);
+      setValidationError(null);
+      errorTimer.current = null;
+    }, 6000);
+  };
+
+  const handleSearch = async () => {
+    const trimmed = query.trim();
+    // basic validation: non-empty and reasonable characters (letters, numbers, comma, dot, hyphen, space)
+    const validPattern = /^[a-zA-Z0-9\s,.'-]{1,60}$/u;
+    if (!trimmed) {
+      setValidationError("Please enter a city name or zip code.");
+      scheduleClearErrors();
+      return;
+    }
+    if (!validPattern.test(trimmed)) {
+      setValidationError(
+        "Please enter a valid city name (letters, numbers, commas, dashes)."
+      );
+      scheduleClearErrors();
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setValidationError(null);
+    try {
+      const data = await featchWeather(trimmed);
+      setWeather(data);
+      setQuery("");
+    } catch (err) {
+      // axios errors include response; handle 404 as not found
+      const status = err?.response?.status;
+      if (status === 404) {
+        setError(
+          "City not found. Please try a different name (e.g. 'London')."
+        );
+      } else if (
+        err?.code === "ENOTFOUND" ||
+        err?.message?.includes("Network")
+      ) {
+        setError("Network error. Check your connection and try again.");
+      } else {
+        setError("Unable to fetch weather. Try again later.");
+      }
+      console.error("Fetch error:", err);
+      scheduleClearErrors();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") handleSearch();
+  };
+
+  // compute a simple class from weather main type for themed background
+  const themeClass = weather?.weather?.[0]?.main
+    ? weather.weather[0].main.toLowerCase()
+    : "default";
+
+  return (
+    <div className={`main-container ${themeClass}`}>
+      <div className="search-wrap">
+        <div className="input-with-icons">
+          <input
+            type="text"
+            className="search"
+            placeholder="Search city, e.g. London"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setError(null);
+              setValidationError(null);
+              clearErrorTimer();
+            }}
+            onKeyDown={handleKeyDown}
+            aria-label="Search city"
+            disabled={loading}
+          />
+          <span className="icon icon-left" aria-hidden>
             <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+              width={64}
+              height={64}
+              src="/icons/icon-512.png"
+              alt="search"
+              className="input-icon"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          </span>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          className="search-btn"
+          onClick={handleSearch}
+          disabled={loading}
+          aria-label="Search"
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          {loading ? (
+            "Searching..."
+          ) : (
+            <span className="icon icon-right logo" aria-hidden>
+              <Image
+                width={50}
+                height={50}
+                src="/icons/icon-192.png"
+                alt="app logo"
+                className="input-icon"
+              />
+            </span>
+          )}
+        </button>
+        <button
+          className="geo-btn-small"
+          onClick={async () => {
+            // geolocation action moved to small button
+            if (!("geolocation" in navigator)) {
+              setError("Geolocation not supported in this browser.");
+              scheduleClearErrors();
+              return;
+            }
+            setLoading(true);
+            setError(null);
+            try {
+              navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                  try {
+                    const data = await featchWeatherByCoords(
+                      pos.coords.latitude,
+                      pos.coords.longitude
+                    );
+                    setWeather(data);
+                  } catch (err) {
+                    setError("Unable to fetch weather for your location.");
+                    console.error(err);
+                    scheduleClearErrors();
+                  } finally {
+                    setLoading(false);
+                  }
+                },
+                (err) => {
+                  setLoading(false);
+                  setError("Permission denied or unable to retrieve location.");
+                  scheduleClearErrors();
+                }
+              );
+            } catch (err) {
+              setLoading(false);
+              setError("Unable to access geolocation.");
+              scheduleClearErrors();
+            }
+          }}
+          aria-label="Use my location"
+          title="Use my location"
+          disabled={loading}
         >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          📍
+        </button>
+      </div>
+
+      {validationError && (
+        <div className="error-card card" role="alert" aria-live="assertive">
+          {validationError}
+        </div>
+      )}
+
+      {error && (
+        <div className="error-card card" role="alert" aria-live="assertive">
+          {error}
+        </div>
+      )}
+
+      {weather?.main && (
+        <div className="city card">
+          <h2 className="city-name">
+            <span>{weather.name}</span>
+            <sup>{weather.sys.country}</sup>
+          </h2>
+
+          <div className="city-temp">
+            {Math.round(weather.main.temp)}
+            <sup>&deg;C</sup>
+          </div>
+
+          <div className="info">
+            <Image
+              width={100}
+              height={100}
+              className="city-icon"
+              src={`https://openweathermap.org/img/wn/${weather.weather[0].icon}@2x.png`}
+              alt={weather.weather[0].description}
+            />
+            <p className="description">{weather.weather[0].description}</p>
+          </div>
+
+          <div className="meta">
+            <div>Humidity: {weather.main.humidity}%</div>
+            <div>Wind: {Math.round(weather.wind.speed)} m/s</div>
+          </div>
+        </div>
+      )}
+
+      {!weather && !loading && (
+        <div className="hint card">
+          Try searching for a city to see the weather. Press Enter or click
+          Search.
+        </div>
+      )}
     </div>
   );
+};
+
+export default App;
+
+// Register service worker when running in browser
+if (typeof window !== "undefined") {
+  window.addEventListener("load", () => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => console.log("Service worker registered:", reg.scope))
+        .catch((err) =>
+          console.warn("Service worker registration failed:", err)
+        );
+    }
+  });
 }
